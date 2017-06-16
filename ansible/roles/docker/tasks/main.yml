@@ -1,0 +1,25 @@
+---
+- name: add docker key
+  apt_key:
+    id: 2C52609D
+    url: https://apt.dockerproject.org/gpg
+    state: present
+
+- name: add docker repo
+  apt_repository:
+    repo: "deb https://apt.dockerproject.org/repo ubuntu-trusty main"
+    state: present
+
+- name: install packages
+  apt:
+    pkg: docker-engine
+    state: installed
+    update_cache: yes
+
+- name: ensure docker service started
+  service:
+    name: docker
+    state: started
+
+- name: install helper python lib
+  pip: name=docker-py version=1.3.1

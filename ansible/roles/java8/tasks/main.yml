@@ -1,0 +1,14 @@
+---
+- name: add apt repos
+  apt_repository: repo="{{ item }}" state=present
+  with_items:
+    - ppa:webupd8team/java
+
+- name: auto accept oracle jdk license
+  shell: echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | /usr/bin/debconf-set-selections
+
+- name: ensure packages are installed
+  apt: pkg="{{ item }}" state=installed update_cache=yes
+  with_items:
+   - oracle-java8-installer
+

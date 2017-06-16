@@ -1,0 +1,35 @@
+<configuration>
+
+  <conversionRule conversionWord="coloredLevel" converterClass="play.api.libs.logback.ColoredLevel" />
+
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%coloredLevel %logger{15} - %message%n%xException{10}</pattern>
+    </encoder>
+  </appender>
+
+  <!-- !!!!    -->
+  <!-- Rename this file to logback.xml to actually have an effect -->
+  <!-- !!!!    -->
+
+  <!--<logger name="actors" level="INFO" />-->
+  <!--<logger name="core" level="INFO" />-->
+  <logger name="controllers" level="INFO" />
+
+  <logger name="akka" level="INFO" />
+  <!--<logger name="slick.jdbc.JdbcBackend.statement" level="DEBUG" />-->
+  <!--<logger name="slick.jdbc.JdbcBackend.benchmark" level="DEBUG" />-->
+  <!--<logger name="slick.jdbc.StatementInvoker.result" level="DEBUG" />-->
+  <!--<logger name="slick.compiler.QueryCompilerBenchmark" level="DEBUG" />-->
+
+
+  <logger name="play" level="INFO" />
+  <logger name="application" level="DEBUG" />
+
+  <logger name="com.gargoylesoftware.htmlunit.javascript" level="OFF" />
+
+  <root level="WARN">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+</configuration>

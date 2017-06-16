@@ -1,0 +1,6 @@
+---
+- name: Grab sbt .deb
+  get_url: url=https://dl.bintray.com/sbt/debian/sbt-{{ sbt_version}}.deb dest=/tmp/sbt-{{ sbt_version }}.deb force=no
+
+- name: Update sbt install
+  shell: dpkg -i -E /tmp/sbt-{{ sbt_version }}.deb

@@ -1,0 +1,21 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# todo: stupid simple ui for exploring and walking the graph
+GET           /metrics                                                          controllers.StatsController.getMetrics
+GET           /healthcheck                                                      controllers.StatsController.getBuild
+
+GET           /resource/:resourceType                                           controllers.DocumentController.multiGet(resourceType: String, id: List[String])
+GET           /resource/:resourceType/:resourceId                               controllers.DocumentController.get(resourceType: String, resourceId: String)
+PUT           /resource/:resourceType/:resourceId                               controllers.ResourceController.put(resourceType: String, resourceId: String)
+DELETE        /resource/:resourceType/:resourceId                               controllers.ResourceController.delete(resourceType: String, resourceId: String)
+GET           /resource/:resourceType/:resourceId/incoming/:incomingType        controllers.ResourceController.getIncoming(resourceType: String, resourceId: String, incomingType: String)
+PUT           /resource                                                         controllers.ResourceController.multiPut
+
+GET           /changefeed                                                       controllers.ChangefeedController.list(page: Int ?= 0, size: Int ?= 25)
+POST          /changefeed                                                       controllers.ChangefeedController.create
+GET           /changefeed/:id                                                   controllers.ChangefeedController.get(id)
+DELETE        /changefeed/:id                                                   controllers.ChangefeedController.delete(id)
+GET           /changefeed/:id/stream                                            controllers.ChangefeedController.stream(id, bufferSize: Int ?= 1000, delayMS: Int ?= 250)
+POST          /changefeed/:id/ack                                               controllers.ChangefeedController.ack(id, ack: Long)

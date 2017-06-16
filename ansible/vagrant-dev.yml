@@ -1,0 +1,15 @@
+---
+- hosts: 127.0.0.1
+  gather_facts: no
+  roles:
+   - common
+   - docker
+   - postgres
+   - sbt
+   - packer
+  tasks:
+  - name: add vagrant user to sudo-less docker group
+    user:
+      name: vagrant
+      groups: docker
+      append: yes

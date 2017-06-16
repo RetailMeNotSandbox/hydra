@@ -1,0 +1,8 @@
+---
+- name: ensure packages are installed
+  apt: pkg="{{ item }}" state=installed update_cache=yes
+  with_items:
+   - unzip
+   - vim
+   - curl
+   - git

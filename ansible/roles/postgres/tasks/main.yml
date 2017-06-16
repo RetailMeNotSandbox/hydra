@@ -1,0 +1,34 @@
+---
+- name: add apt repos
+  apt_repository: repo="{{ item }}" state=present
+  with_items:
+    - deb http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main 9.5
+
+- name: import postgres repo key
+  apt_key: url=https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+- name: ensure packages are installed
+  apt: pkg="{{ item }}" state=installed update_cache=yes
+  with_items:
+   - postgresql-9.5
+   - libpq-dev
+   - python-psycopg2
+
+- name: ensure database is present
+  postgresql_db: db={{ db_name }} encoding='UTF-8' lc_collate='en_US.utf8' lc_ctype='en_US.utf8' template='template0' state=present
+  sudo: yes
+  sudo_user: postgres
+
+- name: ensure user has access to database
+  postgresql_user: db={{db_name}} user={{db_user}} password={{db_password}} priv=ALL role_attr_flags=NOSUPERUSER,NOCREATEDB
+  sudo: yes
+  sudo_user: postgres
+
+- name: set listen address
+  lineinfile: dest=/etc/postgresql/9.5/main/postgresql.conf state=present line="listen_addresses = '*'" insertbefore="^#listen_addresses" regexp="^listen_addresses"
+  notify: restart postgres
+
+# nb - rely on AWS security groups to limit connections properly
+- name: allow remote connections from appservers
+  template: src=pg_hba.conf.j2 dest=/etc/postgresql/9.5/main/pg_hba.conf owner=postgres group=postgres mode=0640
+  notify: restart postgres

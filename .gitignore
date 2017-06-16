@@ -1,0 +1,14 @@
+logs
+target
+/.idea
+/.vagrant
+/.idea_modules
+/.classpath
+/.project
+/.settings
+/RUNNING_PID
+conf/application.conf
+ansible/vars/secrets.yml
+*.stackdump
+conf/logback-test.xml
+conf/logback.xml
