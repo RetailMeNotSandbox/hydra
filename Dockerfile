@@ -26,8 +26,12 @@ RUN apt-get update && \
 
 WORKDIR /hydra
 
-ADD . /hydra
+# fetch dependencies ahead of time –– that way simple code changes should be cache hits
+COPY build.sbt /hydra
+COPY project /hydra/project
+RUN sbt update
 
+COPY . /hydra
 RUN sbt clean test && \
     sbt universal:packageBin && \
     mkdir -p /opt/hydra && \
