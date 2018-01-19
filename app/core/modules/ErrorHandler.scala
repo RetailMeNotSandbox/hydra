@@ -1,6 +1,5 @@
 package core.modules
 
-import play.api.Logger
 import play.api.http.HttpErrorHandler
 import play.api.mvc._
 import play.api.mvc.Results._
@@ -18,7 +17,7 @@ class ErrorHandler extends HttpErrorHandler {
   }
 
   def onServerError(request: RequestHeader, exception: Throwable) = {
-    Logger.error(s"Error during request to ${request.path}", exception)
+//    Logger.error(s"Error during request to ${request.path}", exception)
     Future.successful(
       InternalServerError(Json.toJson(ServerErrorResponse(s"Error: ${exception.getMessage}  Caused by: ${exception.getCause}")))
     )

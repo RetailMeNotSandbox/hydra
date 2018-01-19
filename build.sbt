@@ -4,8 +4,6 @@ name := """Hydra"""
 
 organization := "com.rmn.api"
 
-version := "0.1"
-
 scalaVersion := "2.11.6"
 
 resolvers ++= Seq("snapshots", "releases").map(Resolver.sonatypeRepo)
@@ -51,3 +49,17 @@ buildInfoUsePackageAsPath := true
 buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion)
 
 buildInfoOptions ++= Seq(BuildInfoOption.ToMap, BuildInfoOption.ToJson, BuildInfoOption.BuildTime)
+
+// Release
+import ReleaseTransformations._
+releaseProcess := Seq[ReleaseStep](
+  checkSnapshotDependencies,              // : ReleaseStep
+  inquireVersions,                        // : ReleaseStep
+  runClean,                               // : ReleaseStep
+  runTest,                                // : ReleaseStep
+  setReleaseVersion,                      // : ReleaseStep
+  commitReleaseVersion,                   // : ReleaseStep, performs the initial git checks
+  tagRelease,                             // : ReleaseStep
+  setNextVersion,                         // : ReleaseStep
+  commitNextVersion                       // : ReleaseStep
+)
