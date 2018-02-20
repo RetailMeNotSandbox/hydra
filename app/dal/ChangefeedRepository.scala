@@ -5,6 +5,7 @@ import javax.inject.{Inject, Singleton}
 import com.google.inject.ImplementedBy
 import core.db.{DatabaseModule, PgDriver}
 import core.util.{FutureUtil, Instrumented}
+import org.joda.time.DateTime
 import slick.dbio.Effect.Write
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -12,7 +13,7 @@ import scala.concurrent.{ExecutionContext, Future}
 @ImplementedBy(classOf[PostgresChangefeedRepository])
 trait ChangefeedRepository {
   def list(page: Int, size: Int): Future[Seq[(ChangefeedRow, Long)]]
-  def get(id: String) : Future[Option[(ChangefeedRow, Long)]]
+  def get(id: String) : Future[Option[(ChangefeedRow, Long, Option[DateTime])]]
   def simpleGet(id: String): Future[Option[ChangefeedRow]]
   def create(id: String, typeFilter: Option[List[String]], parentId: Option[String]): Future[Int]
   def delete(id: String) : Future[Int]
@@ -32,19 +33,40 @@ class PostgresChangefeedRepository @Inject()(databaseModule: DatabaseModule)(imp
       .take(size)
       .joinLeft(Tables.Changefeed)
       .on(_.parentId === _.id)
-      .map(r => (r._1, r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)))
+      .map(r => (
+        r._1,
+        r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)
+      ))
       .result
   }).andThen(FutureUtil.logFailure("ChangefeedRepo.list"))
 
   val getTimer = timing("get")
-  def get(id: String): Future[Option[(ChangefeedRow, Long)]] = getTimer(databaseModule.read.run {
+  def get(id: String): Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = getTimer(databaseModule.read.run {
     Tables.Changefeed
       .filter(_.id === id)
       .joinLeft(Tables.Changefeed)
       .on(_.parentId === _.id)
-      .map(r => (r._1, r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)))
+      .map(r => (
+        r._1,
+        r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)
+      ))
       .result
       .headOption
+      .flatMap {
+        case None =>
+          DBIO.successful(None)
+        case Some((changefeedRow, parentMaxAck)) =>
+          Tables.Changefeed
+            .filter(_.id === id)
+            .join(Tables.ChangeHistory)
+            .on((changefeedRow, changeHistoryRow) => changeHistoryRow.`type` === changefeedRow.typeFilter.any)
+            .sortBy(_._2.seq.desc)
+            .take(1)
+            .map(_._2.eventTime)
+            .result
+            .headOption
+            .map(maxEventTime => Some((changefeedRow, parentMaxAck, maxEventTime)))
+      }
   }).andThen(FutureUtil.logFailure("ChangefeedRepo.get"))
 
   val simpleGetTimer = timing("simpleGet")

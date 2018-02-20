@@ -129,7 +129,7 @@ In this particular example, the `primary` changefeed did not have a `typeFilter`
 and the fetcher was rigged to die to provide an example `error` message.
 
     POST /changefeed/{id}/ack?ack=123
-    
+
 ^ Acknowledge that the changefeed consumer has finished processing all events up to the specified sequence number.
 
 Acking allows for several things to happen:
@@ -153,7 +153,12 @@ Running Locally
 * `cd /vagrant`
 * `sbt run`
 
-To keep the `/vagrant` directory synced, from another terminal run `vagrant rsync-auto`
+To keep the `/vagrant` directory synced, from another terminal run `vagrant rsync-auto`.
+
+Note that, for local Hydra development, Vagrant is much easier than docker-compose. This is due to the nature of the
+Play dev server. Apparently, Play can only be run in development mode via the SBT or Activator console. By the time
+you have an SBT-packaged binary (i.e. what we have), you are stuck. At least, that is the idea I have gotten from my
+research on the matter.
 
 ## Regenerating Tables.scala
 If you've updated the schema by creating a new sql file in `conf/evolutions/default`, go ahead and apply the evolution.

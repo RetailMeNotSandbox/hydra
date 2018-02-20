@@ -4,6 +4,8 @@ import com.typesafe.config.{Config, ConfigFactory}
 import slick.profile.SqlProfile.ColumnOption
 
 import scala.collection.mutable
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 object CustomizedCodeGenerator {
 
@@ -22,7 +24,7 @@ object CustomizedCodeGenerator {
     // filter out desired tables
     val excluded = Seq("PLAY_EVOLUTIONS")
 
-    db.run {
+    val modelWritten = db.run {
       PgDriver.defaultTables.map(_.filter(t => !(excluded contains t.name.name.toUpperCase)))
         .flatMap(PgDriver.createModelBuilder(_, false).buildModel)
     }.map { model =>
@@ -108,5 +110,6 @@ ${caseClasses.mkString("\n")}
         }
       }.writeToFile("core.db.PgDriver", path, outPackage)
     }
+    Await.result(modelWritten, Duration.Inf)
   }
 }
