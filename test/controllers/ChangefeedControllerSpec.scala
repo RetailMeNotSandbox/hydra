@@ -26,7 +26,7 @@ class ChangefeedControllerSpec extends PlaySpec
   with SuiteActorSystem {
 
   object TestChangefeedRepository {
-    def apply(listR: Future[Seq[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
+    def apply(listR: Future[Seq[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               getR: Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               simpleGetR: Future[Option[ChangefeedRow]] = Future.failed(new NotImplementedError()),
               createR: Future[Int] = Future.failed(new NotImplementedError()),
@@ -120,7 +120,7 @@ class ChangefeedControllerSpec extends PlaySpec
     "include the next link if this page is full" in {
       implicit val executor = new CallingThreadExecutionContext()
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
-      val repo = TestChangefeedRepository(listR = Future.successful(Seq((ChangefeedRow("foo", created = now, lastAck = now), 100))))
+      val repo = TestChangefeedRepository(listR = Future.successful(Seq((ChangefeedRow("foo", created = now, lastAck = now), 100, Some(now)))))
       val controller = new ChangefeedController(repo, auth, builder)
 
       val response = controller.list(1, 1)(FakeRequest().withHeaders("key" -> "foo"))
@@ -134,6 +134,7 @@ class ChangefeedControllerSpec extends PlaySpec
             "attributes" -> Json.obj(
               "maxAck" -> 0,
               "parentMaxAck" -> 100,
+              "maxEventTime" -> "2017-02-06T17:12:48.000Z",
               "created" -> "2017-02-06T17:12:48.000Z",
               "lastAck" -> "2017-02-06T17:12:48.000Z"
             ),

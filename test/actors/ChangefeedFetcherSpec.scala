@@ -41,7 +41,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
   }
 
   object TestChangefeedRepository {
-    def apply(listR: Future[Seq[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
+    def apply(listR: Future[Seq[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               getR: Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               simpleGetR: Future[Option[ChangefeedRow]] = Future.failed(new NotImplementedError()),
               createR: Future[Int] = Future.failed(new NotImplementedError()),

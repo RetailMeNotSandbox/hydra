@@ -109,8 +109,6 @@ class ChangefeedController @Inject()(cr: ChangefeedRepository, da: DynamicAction
   def constrain(min: Int, value: Int) = Math.max(min, value)
   def constrain(min: Int, value: Int, max: Int) = Math.min(Math.max(min, value), max)
 
-  def changefeedToResource(t: (ChangefeedRow, Long)): ChangefeedResource =
-    changefeedToResource((t._1, t._2, None))
   def changefeedToResource(t: (ChangefeedRow, Long, Option[DateTime])) : ChangefeedResource = new ChangefeedResource(
     t._1.id,
     ChangefeedAttributes(

@@ -19,7 +19,7 @@ trait Tables {
 
 
   /** GetResult implicit for fetching ChangefeedRow objects using plain SQL queries */
-  implicit def GetResultChangefeedRow(implicit e0: GR[String], e1: GR[Option[String]], e2: GR[Option[List[String]]], e3: GR[Long]): GR[ChangefeedRow] = GR{
+  implicit def GetResultChangefeedRow(implicit e0: GR[String], e1: GR[Option[String]], e2: GR[Long]): GR[ChangefeedRow] = GR{
     prs => import prs._
     ChangefeedRow.tupled((<<[String], <<?[String], <<?[List[String]], <<[Long], <<[org.joda.time.DateTime], <<[org.joda.time.DateTime]))
   }
@@ -68,7 +68,7 @@ trait Tables {
     val id: Rep[String] = column[String]("id")
     /** Database column seq SqlType(bigserial), AutoInc */
     val seq: Rep[Long] = column[Long]("seq", O.AutoInc)
-    /** Database column event_time SqlType(timestamp) */
+    /** Database column event_time SqlType(timestamptz) */
     val eventTime: Rep[org.joda.time.DateTime] = column[org.joda.time.DateTime]("event_time")
 
     /** Primary key of ChangeHistory (database name change_history_pkey) */
@@ -168,7 +168,7 @@ case class ChangefeedRow(id: String, parentId: Option[String] = None, typeFilter
  *  @param `type` Database column type SqlType(text)
  *  @param id Database column id SqlType(text)
  *  @param seq Database column seq SqlType(bigserial), AutoInc
- *  @param eventTime Database column event_time SqlType(timestamp) */
+ *  @param eventTime Database column event_time SqlType(timestamptz) */
 case class ChangeHistoryRow(`type`: String, id: String, seq: Long, eventTime: org.joda.time.DateTime)
 
 /** Entity class storing rows of table ChangeHistoryToExpand
