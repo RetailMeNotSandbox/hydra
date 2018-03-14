@@ -8,7 +8,7 @@ import akka.actor.{ActorSystem, MultiQueueHack, PoisonPill}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import dal.{ChangeHistoryRepository, ChangeHistoryRow, ChangefeedRepository, ChangefeedRow}
-import org.joda.time.{DateTimeZone, LocalDateTime}
+import org.joda.time.{DateTime, DateTimeZone, LocalDateTime}
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, MustMatchers, WordSpecLike}
 import testutil.VirtualScheduler
 
@@ -41,8 +41,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
   }
 
   object TestChangefeedRepository {
-    def apply(listR: Future[Seq[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
-              getR: Future[Option[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
+    def apply(listR: Future[Seq[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
+              getR: Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               simpleGetR: Future[Option[ChangefeedRow]] = Future.failed(new NotImplementedError()),
               createR: Future[Int] = Future.failed(new NotImplementedError()),
               deleteR: Future[Int] = Future.failed(new NotImplementedError()),
@@ -134,7 +134,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
 
         def get(id: String) = {
           requested = true
-          Promise[Option[(ChangefeedRow, Long)]].future
+          Promise[Option[(ChangefeedRow, Long, Option[DateTime])]].future
         }
 
         def delete(id: String) = ???
@@ -166,12 +166,12 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Subscribing to Initializing with acks from received subscription updates" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      var acksRequest: Promise[Option[(ChangefeedRow, Long)]] = null
+      var acksRequest: Promise[Option[(ChangefeedRow, Long, Option[DateTime])]] = null
       val feeds = new ChangefeedRepository {
         def simpleGet(id: String) = ???
 
         def get(id: String) = {
-          acksRequest = Promise[Option[(ChangefeedRow, Long)]]
+          acksRequest = Promise[Option[(ChangefeedRow, Long, Option[DateTime])]]
           acksRequest.future
         }
 
@@ -214,7 +214,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
 
       monitor.msgAvailable mustEqual false
 
-      acksRequest.success(Some((changefeed, 102)))
+      acksRequest.success(Some((changefeed, 102, None)))
 
       lastFetch mustEqual Some(FetchRequest(101, 102, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
@@ -223,12 +223,12 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Subscribing to Initializing with acks from rapidly received subscription updates" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      var acksRequest: Promise[Option[(ChangefeedRow, Long)]] = null
+      var acksRequest: Promise[Option[(ChangefeedRow, Long, Option[DateTime])]] = null
       val feeds = new ChangefeedRepository {
         def simpleGet(id: String) = ???
 
         def get(id: String) = {
-          acksRequest = Promise[Option[(ChangefeedRow, Long)]]
+          acksRequest = Promise[Option[(ChangefeedRow, Long, Option[DateTime])]]
           acksRequest.future
         }
 
@@ -289,7 +289,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
 
       monitor.msgAvailable mustEqual false
 
-      acksRequest.success(Some((changefeed, 103)))
+      acksRequest.success(Some((changefeed, 103, None)))
 
       lastFetch mustEqual Some(FetchRequest(102, 103, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
@@ -348,7 +348,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
       val history = TestChangeHistoryRepository()
-      val feeds = TestChangefeedRepository(getR = Promise[Option[(ChangefeedRow, Long)]].future)
+      val feeds = TestChangefeedRepository(getR = Promise[Option[(ChangefeedRow, Long, Option[DateTime])]].future)
 
       val parentProbe = TestProbe()
       val ref = parentProbe.childActorOf(ChangefeedFetcher.props(changefeed, subMgr.ref, history, feeds, 10, 10.seconds))
@@ -377,7 +377,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
       val history = TestChangeHistoryRepository()
-      val feeds = TestChangefeedRepository(getR = Promise[Option[(ChangefeedRow, Long)]].future)
+      val feeds = TestChangefeedRepository(getR = Promise[Option[(ChangefeedRow, Long, Option[DateTime])]].future)
 
       val parentProbe = TestProbe()
       val ref = parentProbe.childActorOf(ChangefeedFetcher.props(changefeed, subMgr.ref, history, feeds, 10, 10.seconds))
@@ -405,7 +405,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Initializing to Fetching once latestAcks are retrieved" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -439,7 +439,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Initializing to AtHead if latestAcks say the changefeed is already caught up to parent" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 20), 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 20), 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -473,12 +473,12 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Initializing to Fetching using ack values from SubscriptionUpdates while lastAck retrieval is outstanding" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      var acksRequest: Promise[Option[(ChangefeedRow, Long)]] = null
+      var acksRequest: Promise[Option[(ChangefeedRow, Long, Option[DateTime])]] = null
       val feeds = new ChangefeedRepository {
         def simpleGet(id: String) = ???
 
         def get(id: String) = {
-          acksRequest = Promise[Option[(ChangefeedRow, Long)]]
+          acksRequest = Promise[Option[(ChangefeedRow, Long, Option[DateTime])]]
           acksRequest.future
         }
 
@@ -523,7 +523,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       ref ! SubscriptionUpdate(None, 21)
       monitor.expectMsg(Transition(ref, Initializing, Initializing))
 
-      acksRequest.success(Some((changefeed, 20)))
+      acksRequest.success(Some((changefeed, 20, None)))
 
       lastFetch mustEqual Some(FetchRequest(1, 21, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
@@ -532,7 +532,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from Fetching if a subscription error is encountered" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -571,7 +571,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from Fetching if there is an error with the fetch query" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -612,7 +612,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to AtHead if the fetch catches up to parent ack" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -642,16 +642,17 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      fetchRequest.success(Seq(ChangeHistoryRow("foo", "bar", 20)))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      fetchRequest.success(Seq(ChangeHistoryRow("foo", "bar", 20, now)))
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
-      parentProbe.expectMsg(BufferedRows(Seq(ChangeHistoryRow("foo", "bar", 20))))
+      parentProbe.expectMsg(BufferedRows(Seq(ChangeHistoryRow("foo", "bar", 20, now))))
     }
 
     "transition from Fetching to AtHead if this fetch returns fewer than the number of rows requested" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -681,7 +682,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -691,7 +693,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to AtHead if this fetch returns no rows" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -731,7 +733,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to BufferFull if this fetch fills the buffer" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -761,7 +763,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 18), ChangeHistoryRow("foo", "bar", 19))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 18, now), ChangeHistoryRow("foo", "bar", 19, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -771,7 +774,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to BufferFull if the buffer is full, even if this fetch catches up to parent ack" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -801,7 +804,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 19), ChangeHistoryRow("foo", "bar", 20))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 19, now), ChangeHistoryRow("foo", "bar", 20, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -811,7 +815,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to Fetching when this fetch completes if a parentAck came in and we still have room in the buffer" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -845,7 +849,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       monitor.msgAvailable mustEqual false
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 19), ChangeHistoryRow("foo", "bar", 20))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 19, now), ChangeHistoryRow("foo", "bar", 20, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, Fetching))
@@ -855,7 +860,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from Fetching to Fetching when this fetch completes if an ack came in that cleared enough room in the buffer" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -885,7 +890,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 2))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 2, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -899,7 +905,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       ref ! SubscriptionUpdate(Some("primary"), 2)
       monitor.msgAvailable mustEqual false
 
-      val secondResult = Seq(ChangeHistoryRow("foo", "hello", 3))
+      val secondResult = Seq(ChangeHistoryRow("foo", "hello", 3, now))
       fetchRequest.success(secondResult)
 
       monitor.expectMsg(Transition(ref, Fetching, Fetching))
@@ -910,7 +916,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from Fetching if we receive a too high ack value while fetching" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -949,7 +955,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from Fetching if we receive an ack for a seq we didn't send" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -979,7 +985,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 3))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 3, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -998,7 +1005,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in Fetching, ignore stale acks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1028,7 +1035,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 3))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 3, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1047,7 +1055,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       parentProbe.msgAvailable mustEqual false
       monitor.msgAvailable mustEqual false
 
-      val secondResults = Seq(ChangeHistoryRow("foo", "hello", 4))
+      val secondResults = Seq(ChangeHistoryRow("foo", "hello", 4, now))
       fetchRequest.success(secondResults)
 
       monitor.expectMsg(Transition(ref, Fetching, Fetching))
@@ -1058,7 +1066,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in Fetching, ignore stale parentAcks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1094,7 +1102,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       parentProbe.msgAvailable mustEqual false
       monitor.msgAvailable mustEqual false
 
-      val results = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 3))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 3, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1109,7 +1118,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from BufferFull on subscriptionerror" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1139,7 +1148,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 19), ChangeHistoryRow("foo", "bar", 20))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 19, now), ChangeHistoryRow("foo", "bar", 20, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1154,7 +1164,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from BufferFull if we receive an ack that we didn't send" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1184,7 +1194,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 18), ChangeHistoryRow("foo", "bar", 20))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 18, now), ChangeHistoryRow("foo", "bar", 20, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1199,7 +1210,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in BufferFull, ignore stale acks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1229,7 +1240,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(10, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 11), ChangeHistoryRow("foo", "bar", 12))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 11, now), ChangeHistoryRow("foo", "bar", 12, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1250,7 +1262,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in BufferFull, ignore stale parentAcks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1280,7 +1292,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 2))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 2, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1301,7 +1314,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from BufferFull to Fetching on relevant ack" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1331,7 +1344,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 2))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 2, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1346,7 +1360,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from BufferFull to Fetching on relevant ack, using a parentAck that arrived in the meantime" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1376,7 +1390,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1), ChangeHistoryRow("foo", "bar", 2))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 1, now), ChangeHistoryRow("foo", "bar", 2, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1392,7 +1407,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from BufferFull to AtHead if we receive an ack that clears some of the buffer but we're already caught up to the parent ack" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1422,7 +1437,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 2))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 19), ChangeHistoryRow("foo", "bar", 20))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val firstResults = Seq(ChangeHistoryRow("foo", "bizz", 19, now), ChangeHistoryRow("foo", "bar", 20, now))
       fetchRequest.success(firstResults)
 
       monitor.expectMsg(Transition(ref, Fetching, BufferFull))
@@ -1438,7 +1454,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from AtHead on subscription error" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1468,7 +1484,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -1483,7 +1500,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "stop from AtHead if we receive an ack that we didn't send" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1513,7 +1530,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -1528,7 +1546,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in AtHead, ignore stale acks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1558,7 +1576,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(10, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -1579,7 +1598,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "in AtHead, ignore stale parentAcks" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed, 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1609,7 +1628,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(0, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -1630,7 +1650,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from AtHead to Fetching on a relevant parentAck" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1660,7 +1680,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(10, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))
@@ -1675,7 +1696,7 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
     "transition from AtHead to Fetching on a relevant parentAck, using an ack that arrived in the meantime" in {
       val changefeed = ChangefeedRow("primary", created = nowTimestamp, lastAck = nowTimestamp)
       val subMgr = TestProbe()
-      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20))))
+      val feeds = TestChangefeedRepository(getR = Future.successful(Some((changefeed.copy(maxAck = 10), 20, None))))
       var fetchRequest: Promise[Seq[ChangeHistoryRow]] = null
       var lastFetch: Option[FetchRequest] = None
       val history = new ChangeHistoryRepository {
@@ -1705,7 +1726,8 @@ class ChangefeedFetcherSpec extends TestKit(ActorSystem("testSystem", ConfigFact
       lastFetch mustEqual Some(FetchRequest(10, 20, None, 10))
       monitor.expectMsg(Transition(ref, Initializing, Fetching))
 
-      val results = Seq(ChangeHistoryRow("foo", "bar", 18))
+      val now = new LocalDateTime(2017, 9, 21, 17, 55, 12).toDateTime(DateTimeZone.UTC)
+      val results = Seq(ChangeHistoryRow("foo", "bar", 18, now))
       fetchRequest.success(results)
 
       monitor.expectMsg(Transition(ref, Fetching, AtHead))

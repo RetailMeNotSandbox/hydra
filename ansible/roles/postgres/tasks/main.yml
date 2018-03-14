@@ -16,16 +16,22 @@
 
 - name: ensure database is present
   postgresql_db: db={{ db_name }} encoding='UTF-8' lc_collate='en_US.utf8' lc_ctype='en_US.utf8' template='template0' state=present
-  sudo: yes
-  sudo_user: postgres
+  become: true
+  become_user: postgres
 
 - name: ensure user has access to database
   postgresql_user: db={{db_name}} user={{db_user}} password={{db_password}} priv=ALL role_attr_flags=NOSUPERUSER,NOCREATEDB
-  sudo: yes
-  sudo_user: postgres
+  become: true
+  become_user: postgres
 
 - name: set listen address
   lineinfile: dest=/etc/postgresql/9.5/main/postgresql.conf state=present line="listen_addresses = '*'" insertbefore="^#listen_addresses" regexp="^listen_addresses"
+  notify: restart postgres
+
+# Hydra opens three connection pools. If each pool is configured with numThreads=25 (the default) you'll probably
+# saturate the default Postgres max_connections=100. Bump the max_connections setting accordingly.
+- name: set max connections
+  lineinfile: dest=/etc/postgresql/9.5/main/postgresql.conf state=present line="max_connections = {{db_max_connections}}" regexp="^max_connections"
   notify: restart postgres
 
 # nb - rely on AWS security groups to limit connections properly

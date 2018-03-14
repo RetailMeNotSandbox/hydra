@@ -6,7 +6,6 @@
    - docker
    - postgres
    - sbt
-   - packer
   tasks:
   - name: add vagrant user to sudo-less docker group
     user:

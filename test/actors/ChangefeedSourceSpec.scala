@@ -8,6 +8,7 @@ import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import dal.ChangeHistoryRow
+import org.joda.time.{DateTimeZone, LocalDateTime}
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, MustMatchers, WordSpecLike}
 import testutil.{ErrorActor, VirtualScheduler}
 
@@ -47,12 +48,13 @@ class ChangefeedSourceSpec extends TestKit(ActorSystem("testSystem", ConfigFacto
         .ensureSubscription()
         .expectNoMsg(0.seconds)
 
-      sourceRef ! BufferedRows(Seq(ChangeHistoryRow("foo", "bar", 1)))
+      val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
+      sourceRef ! BufferedRows(Seq(ChangeHistoryRow("foo", "bar", 1, now)))
 
       probe
         .expectNoMsg(0.seconds)
         .request(1)
-        .expectNext(ChangefeedEvent("event", Some(ChangeHistoryRow("foo", "bar", 1))))
+        .expectNext(ChangefeedEvent("event", Some(ChangeHistoryRow("foo", "bar", 1, now))))
     }
 
     "shutdown on a fetch error" in {

@@ -50,8 +50,8 @@ class PostgresChangeHistoryRepository @Inject()(databaseModule: DatabaseModule)(
   val compactTimer = timing("compact")
   def compact(resourceType: String, resourceId: String): Future[Int] = compactTimer(databaseModule.backend.run(
     sqlu"""
-      INSERT INTO change_history(type, id) VALUES (${resourceType}, ${resourceId})
-      ON CONFLICT (type, id) DO UPDATE SET seq = GREATEST(change_history.seq, EXCLUDED.seq)
+      INSERT INTO change_history(type, id, event_time) VALUES (${resourceType}, ${resourceId}, CURRENT_TIMESTAMP)
+      ON CONFLICT (type, id) DO UPDATE SET seq = GREATEST(change_history.seq, EXCLUDED.seq), event_time = CURRENT_TIMESTAMP
     """: DBIOAction[Int, NoStream, Write]
   ))
 

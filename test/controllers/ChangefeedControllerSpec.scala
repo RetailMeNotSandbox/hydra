@@ -7,7 +7,7 @@ import dal.{ChangeHistoryRow, ChangefeedRepository, ChangefeedRow, DocumentRepos
 import org.joda.time.{DateTime, DateTimeZone, LocalDateTime}
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.http.{ContentTypes, HeaderNames, HttpVerbs, Status}
-import play.api.libs.json.Json
+import play.api.libs.json.{JsNull, Json}
 import play.api.test._
 import testutil.{CallingThreadExecutionContext, SuiteActorSystem}
 
@@ -26,8 +26,8 @@ class ChangefeedControllerSpec extends PlaySpec
   with SuiteActorSystem {
 
   object TestChangefeedRepository {
-    def apply(listR: Future[Seq[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
-              getR: Future[Option[(ChangefeedRow, Long)]] = Future.failed(new NotImplementedError()),
+    def apply(listR: Future[Seq[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
+              getR: Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = Future.failed(new NotImplementedError()),
               simpleGetR: Future[Option[ChangefeedRow]] = Future.failed(new NotImplementedError()),
               createR: Future[Int] = Future.failed(new NotImplementedError()),
               deleteR: Future[Int] = Future.failed(new NotImplementedError()),
@@ -42,10 +42,13 @@ class ChangefeedControllerSpec extends PlaySpec
         def ack(id: String, ack: Long) = ackR
       }
   }
+  val t0 = new LocalDateTime(2017, 9, 21, 6, 0, 0).toDateTime(DateTimeZone.UTC)
+  val t1 = new LocalDateTime(2017, 2, 21, 12, 0, 0).toDateTime(DateTimeZone.UTC)
+  val t2 = new LocalDateTime(2016, 10, 21, 18, 0, 0).toDateTime(DateTimeZone.UTC)
   val source = Source(immutable.Seq(
-    ChangefeedEvent("event", Some(ChangeHistoryRow("foo", "bar", 0))),
-    ChangefeedEvent("event", Some(ChangeHistoryRow("fizz", "buzz", 1))),
-    ChangefeedEvent("event", Some(ChangeHistoryRow("hello", "world", 2)))
+    ChangefeedEvent("event", Some(ChangeHistoryRow("foo", "bar", 0, t0))),
+    ChangefeedEvent("event", Some(ChangeHistoryRow("fizz", "buzz", 1, t1))),
+    ChangefeedEvent("event", Some(ChangeHistoryRow("hello", "world", 2, t2)))
   ))
   val auth = new BlindDynamicActions
   val builder = new ChangeSourceBuilder {
@@ -117,7 +120,7 @@ class ChangefeedControllerSpec extends PlaySpec
     "include the next link if this page is full" in {
       implicit val executor = new CallingThreadExecutionContext()
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
-      val repo = TestChangefeedRepository(listR = Future.successful(Seq((ChangefeedRow("foo", created = now, lastAck = now), 100))))
+      val repo = TestChangefeedRepository(listR = Future.successful(Seq((ChangefeedRow("foo", created = now, lastAck = now), 100, Some(now)))))
       val controller = new ChangefeedController(repo, auth, builder)
 
       val response = controller.list(1, 1)(FakeRequest().withHeaders("key" -> "foo"))
@@ -131,6 +134,7 @@ class ChangefeedControllerSpec extends PlaySpec
             "attributes" -> Json.obj(
               "maxAck" -> 0,
               "parentMaxAck" -> 100,
+              "maxEventTime" -> "2017-02-06T17:12:48.000Z",
               "created" -> "2017-02-06T17:12:48.000Z",
               "lastAck" -> "2017-02-06T17:12:48.000Z"
             ),
@@ -264,7 +268,7 @@ class ChangefeedControllerSpec extends PlaySpec
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
       val repo = TestChangefeedRepository(
         createR = Future.successful(1),
-        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 0, now, now), 100))
+        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 0, now, now), 100, None))
       )
       val controller = new ChangefeedController(repo, auth, builder)
 
@@ -344,7 +348,42 @@ class ChangefeedControllerSpec extends PlaySpec
       implicit val executor = new CallingThreadExecutionContext()
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
       val repo = TestChangefeedRepository(
-        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 0, now, now), 100))
+        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 0, now, now), 100, Some(now)))
+      )
+      val controller = new ChangefeedController(repo, auth, builder)
+
+      val response = controller.get("foo")(FakeRequest().withHeaders("Key" -> "foo"))
+
+      status(response) mustEqual 200
+      contentAsJson(response) mustEqual Json.obj(
+        "data" -> Json.obj(
+          "type" -> "changefeed",
+          "id" -> "foo",
+          "attributes" -> Json.obj(
+            "maxAck" -> 0,
+            "parentMaxAck" -> 100,
+            "maxEventTime" -> "2017-02-06T17:12:48.000Z",
+            "typeFilter" -> List("filter"),
+            "created" -> "2017-02-06T17:12:48.000Z",
+            "lastAck" -> "2017-02-06T17:12:48.000Z"
+          ),
+          "relationships" -> Json.obj(
+            "parent" -> Json.obj(
+              "data" -> Json.obj(
+                "type" -> "changefeed",
+                "id" -> "bar"
+              )
+            )
+          )
+        )
+      )
+    }
+
+    "return 200 when the changefeed has no maxEventTime" in {
+      implicit val executor = new CallingThreadExecutionContext()
+      val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
+      val repo = TestChangefeedRepository(
+        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 0, now, now), 100, None))
       )
       val controller = new ChangefeedController(repo, auth, builder)
 
@@ -438,7 +477,7 @@ class ChangefeedControllerSpec extends PlaySpec
       implicit val executor = new CallingThreadExecutionContext()
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
       val repo = TestChangefeedRepository(
-        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 1, now, now), 100)),
+        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 1, now, now), 100, Some(now))),
         ackR = Future.successful(1)
       )
       val controller = new ChangefeedController(repo, auth, builder)
@@ -452,7 +491,7 @@ class ChangefeedControllerSpec extends PlaySpec
       implicit val executor = new CallingThreadExecutionContext()
       val now = new LocalDateTime(2017, 2, 6, 17, 12, 48).toDateTime(DateTimeZone.UTC)
       val repo = TestChangefeedRepository(
-        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 1, now, now), 100)),
+        getR = Future.successful(Some(ChangefeedRow("foo", Some("bar"), Some(List("filter")), 1, now, now), 100, Some(now))),
         ackR = Future.successful(1)
       )
       val controller = new ChangefeedController(repo, auth, builder)
@@ -500,10 +539,10 @@ class ChangefeedControllerSpec extends PlaySpec
       // only works because builder returns a finite list, instead of the infinitely running Fetcher actor
       val actual = contentAsString(response)
       val expected =
-        """{"eventType":"event","data":{"type":"foo","id":"bar","seq":0}}
-          |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1}}
-          |{"eventType":"event","data":{"type":"hello","id":"world","seq":2}}
-          |""".stripMargin
+        s"""{"eventType":"event","data":{"type":"foo","id":"bar","seq":0,"eventTime":${t0.getMillis}}}
+           |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1,"eventTime":${t1.getMillis}}}
+           |{"eventType":"event","data":{"type":"hello","id":"world","seq":2,"eventTime":${t2.getMillis}}}
+           |""".stripMargin
 
       actual mustEqual expected
     }
@@ -544,10 +583,10 @@ class ChangefeedControllerSpec extends PlaySpec
       // only works because builder returns a finite list, instead of the infinitely running Fetcher actor
       val actual = contentAsString(response)
       val expected =
-        """{"eventType":"event","data":{"type":"foo","id":"bar","seq":0}}
-          |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1}}
-          |{"eventType":"event","data":{"type":"hello","id":"world","seq":2}}
-          |""".stripMargin
+        s"""{"eventType":"event","data":{"type":"foo","id":"bar","seq":0,"eventTime":${t0.getMillis}}}
+           |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1,"eventTime":${t1.getMillis}}}
+           |{"eventType":"event","data":{"type":"hello","id":"world","seq":2,"eventTime":${t2.getMillis}}}
+           |""".stripMargin
 
       actual mustEqual expected
 
@@ -578,10 +617,10 @@ class ChangefeedControllerSpec extends PlaySpec
       // only works because builder returns a finite list, instead of the infinitely running Fetcher actor
       val actual = contentAsString(response)
       val expected =
-        """{"eventType":"event","data":{"type":"foo","id":"bar","seq":0}}
-          |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1}}
-          |{"eventType":"event","data":{"type":"hello","id":"world","seq":2}}
-          |""".stripMargin
+        s"""{"eventType":"event","data":{"type":"foo","id":"bar","seq":0,"eventTime":${t0.getMillis}}}
+           |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1,"eventTime":${t1.getMillis}}}
+           |{"eventType":"event","data":{"type":"hello","id":"world","seq":2,"eventTime":${t2.getMillis}}}
+           |""".stripMargin
 
       actual mustEqual expected
 
@@ -612,10 +651,10 @@ class ChangefeedControllerSpec extends PlaySpec
       // only works because builder returns a finite list, instead of the infinitely running Fetcher actor
       val actual = contentAsString(response)
       val expected =
-        """{"eventType":"event","data":{"type":"foo","id":"bar","seq":0}}
-          |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1}}
-          |{"eventType":"event","data":{"type":"hello","id":"world","seq":2}}
-          |""".stripMargin
+        s"""{"eventType":"event","data":{"type":"foo","id":"bar","seq":0,"eventTime":${t0.getMillis}}}
+           |{"eventType":"event","data":{"type":"fizz","id":"buzz","seq":1,"eventTime":${t1.getMillis}}}
+           |{"eventType":"event","data":{"type":"hello","id":"world","seq":2,"eventTime":${t2.getMillis}}}
+           |""".stripMargin
 
       actual mustEqual expected
 

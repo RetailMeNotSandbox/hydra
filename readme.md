@@ -15,9 +15,9 @@ configuration.  Failure to meet the requirement will result in a `403 Forbidden`
 [JSON API Document](http://jsonapi.org/format/#document-top-level)
 
     GET /resource/{resourceType}?id=...&id=...
-    
+
 ^ Returns all the specified [resources](http://jsonapi.org/format/#document-resource-objects) as a
-[JSON API Document](http://jsonapi.org/format/#document-top-level) 
+[JSON API Document](http://jsonapi.org/format/#document-top-level)
 
     PUT /resource/{resourceType}/{resourceId}
     {
@@ -46,7 +46,7 @@ referenced resource need not already be in Hydra's datastore (ie, Hydra has no p
 ^ Removes the [resource](http://jsonapi.org/format/#document-resource-objects) with the given type and id
 
     GET /changefeed
-    
+
 ^ Returns a [JSON API Document](http://jsonapi.org/format/#document-top-level) listing the various changefeeds that have
 been registered with Hydra.
 
@@ -65,39 +65,39 @@ been registered with Hydra.
         }
       }
     }
-    
-^ Registers a new changefeed with Hydra.  The `typeFilter` attribute and the `parent` relationship are optional.  If 
+
+^ Registers a new changefeed with Hydra.  The `typeFilter` attribute and the `parent` relationship are optional.  If
 `typeFilter` is set, the created changefeed will only emit events for resources of the same type (case-sensitive).  If
 the `parent` relationship is set, the created changefeed will only emit events once the parent changefeed has ack'd to or
 beyond their seq number.
 
     GET /changefeed/{id}
-    
+
 ^ Returns a [JSON API Document](http://jsonapi.org/format/#document-top-level) with the specific changefeed requested.
 
     DELETE /changefeed/{id}
-    
+
 ^ Deletes the specific changefeed.  Any open streaming connections for that changefeed will be closed.
 
     GET /changefeed/{id}/stream?bufferSize=1000
-    
+
 ^ Opens a `Transfer-Encoding: chunked` stream of events for the specified changefeed.  Up to `bufferSize` events will be
-emitted before the client must ack to receive more (See `POST /changefeed/{id}/ack`).  The default value for 
-`bufferSize` is 1,000.  Any value between 1 and 10,000 can be used.  The stream starts from the previously ack'd seq 
-number.  If there have been no acks for this changefeed, it starts at the beginning.  The changefeed will not emit every 
-event.  If the consumer is behind the latest events, any new events for a resource will result in older events for the 
-same resource being discarded.  The primary philosophy here is to ensure that each changefeed sees at least one event 
-whenever a resource has been updated (or a resource that this resource depends on is updated, and so on and so on).  
-Since it's assumed that the consumers of the changefeed only care about the latest value of the Resource and not the 
+emitted before the client must ack to receive more (See `POST /changefeed/{id}/ack`).  The default value for
+`bufferSize` is 1,000.  Any value between 1 and 10,000 can be used.  The stream starts from the previously ack'd seq
+number.  If there have been no acks for this changefeed, it starts at the beginning.  The changefeed will not emit every
+event.  If the consumer is behind the latest events, any new events for a resource will result in older events for the
+same resource being discarded.  The primary philosophy here is to ensure that each changefeed sees at least one event
+whenever a resource has been updated (or a resource that this resource depends on is updated, and so on and so on).
+Since it's assumed that the consumers of the changefeed only care about the latest value of the Resource and not the
 intermediate values, Hydra aggressively discards irrelevant events.
 
-Events are emitted as JSON objects, separated by a newline `\n` character.  There are three types of events: 
+Events are emitted as JSON objects, separated by a newline `\n` character.  There are three types of events:
 
 * `event`, which contain the actual resource identifier and sequence number
 * `keepalive`, which are emitted after 10 seconds of silence
 * `error`, which are emitted when the stream has encountered an error.  The stream will likely close right after seeing
   a error event.
-  
+
 It's helpful to visualize this in curl:
 
 ```
@@ -129,8 +129,8 @@ In this particular example, the `primary` changefeed did not have a `typeFilter`
 and the fetcher was rigged to die to provide an example `error` message.
 
     POST /changefeed/{id}/ack?ack=123
-    
-^ Acknowledge that the changefeed consumer has finished processing all events up to the specified sequence number.  
+
+^ Acknowledge that the changefeed consumer has finished processing all events up to the specified sequence number.
 
 Acking allows for several things to happen:
 
@@ -153,13 +153,13 @@ Running Locally
 * `cd /vagrant`
 * `sbt run`
 
-To keep the `/vagrant` directory synced, from another terminal run `vagrant rsync-auto`
+To keep the `/vagrant` directory synced, from another terminal run `vagrant rsync-auto`.
 
-## Packaging
-To set the version number of the project at build/packaging/run time, do the following:
+Note that, for local Hydra development, Vagrant is much easier than docker-compose. This is due to the nature of the
+Play dev server. Apparently, Play can only be run in development mode via the SBT or Activator console. By the time
+you have an SBT-packaged binary (i.e. what we have), you are stuck. At least, that is the idea I have gotten from my
+research on the matter.
 
-    sbt "set version := \"0.2.0\"" <task>
-    
 ## Regenerating Tables.scala
 If you've updated the schema by creating a new sql file in `conf/evolutions/default`, go ahead and apply the evolution.
 Then, from a terminal run:

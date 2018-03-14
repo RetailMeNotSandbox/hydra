@@ -4,6 +4,8 @@ import com.typesafe.config.{Config, ConfigFactory}
 import slick.profile.SqlProfile.ColumnOption
 
 import scala.collection.mutable
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 object CustomizedCodeGenerator {
 
@@ -22,7 +24,7 @@ object CustomizedCodeGenerator {
     // filter out desired tables
     val excluded = Seq("PLAY_EVOLUTIONS")
 
-    db.run {
+    val modelWritten = db.run {
       PgDriver.defaultTables.map(_.filter(t => !(excluded contains t.name.name.toUpperCase)))
         .flatMap(PgDriver.createModelBuilder(_, false).buildModel)
     }.map { model =>
@@ -38,7 +40,15 @@ object CustomizedCodeGenerator {
             }
           }
 
-          val autoGetterImplicits = Set("play.api.libs.json.JsValue", "org.joda.time.Date", "org.joda.time.Time", "org.joda.time.DateTime")
+          // filter out types for which we supply an implicit GetResult.
+          // Otherwise we get an error about "ambiguous implicit values"
+          val autoGetterImplicits = Set(
+            "play.api.libs.json.JsValue",
+            "org.joda.time.Date",
+            "org.joda.time.Time",
+            "org.joda.time.DateTime",
+            "Option[List[String]]"
+          )
           override def PlainSqlMapper = new PlainSqlMapperDef {
             override def code = {
               val positional = compoundValue(columnsPositional.map(c => (if(c.fakeNullable || c.model.nullable)s"<<?[${c.rawType}]"else s"<<[${c.rawType}]")))
@@ -108,5 +118,6 @@ ${caseClasses.mkString("\n")}
         }
       }.writeToFile("core.db.PgDriver", path, outPackage)
     }
+    Await.result(modelWritten, Duration.Inf)
   }
 }

@@ -13,13 +13,13 @@ trait Tables {
   import slick.jdbc.{GetResult => GR}
 
   /** DDL for all tables. Call .create to execute. */
-  lazy val schema: profile.SchemaDescription = Array(Changefeed.schema, ChangeHistory.schema, ChangeHistoryToCompact.schema, ChangeHistoryToExpand.schema, Resource.schema, ResourceReferences.schema).reduceLeft(_ ++ _)
+  lazy val schema: profile.SchemaDescription = Changefeed.schema ++ ChangeHistory.schema ++ ChangeHistoryToExpand.schema ++ Resource.schema ++ ResourceReferences.schema
   @deprecated("Use .schema instead of .ddl", "3.0")
   def ddl = schema
 
 
   /** GetResult implicit for fetching ChangefeedRow objects using plain SQL queries */
-  implicit def GetResultChangefeedRow(implicit e0: GR[String], e1: GR[Option[String]], e2: GR[Option[List[String]]], e3: GR[Long]): GR[ChangefeedRow] = GR{
+  implicit def GetResultChangefeedRow(implicit e0: GR[String], e1: GR[Option[String]], e2: GR[Long]): GR[ChangefeedRow] = GR{
     prs => import prs._
     ChangefeedRow.tupled((<<[String], <<?[String], <<?[List[String]], <<[Long], <<[org.joda.time.DateTime], <<[org.joda.time.DateTime]))
   }
@@ -52,14 +52,14 @@ trait Tables {
   /** GetResult implicit for fetching ChangeHistoryRow objects using plain SQL queries */
   implicit def GetResultChangeHistoryRow(implicit e0: GR[String], e1: GR[Long]): GR[ChangeHistoryRow] = GR{
     prs => import prs._
-    ChangeHistoryRow.tupled((<<[String], <<[String], <<[Long]))
+    ChangeHistoryRow.tupled((<<[String], <<[String], <<[Long], <<[org.joda.time.DateTime]))
   }
   /** Table description of table change_history. Objects of this class serve as prototypes for rows in queries.
    *  NOTE: The following names collided with Scala keywords and were escaped: type */
   class ChangeHistory(_tableTag: Tag) extends Table[ChangeHistoryRow](_tableTag, "change_history") {
-    def * = (`type`, id, seq) <> (ChangeHistoryRow.tupled, ChangeHistoryRow.unapply)
+    def * = (`type`, id, seq, eventTime) <> (ChangeHistoryRow.tupled, ChangeHistoryRow.unapply)
     /** Maps whole row to an option. Useful for outer joins. */
-    def ? = (Rep.Some(`type`), Rep.Some(id), Rep.Some(seq)).shaped.<>({r=>import r._; _1.map(_=> ChangeHistoryRow.tupled((_1.get, _2.get, _3.get)))}, (_:Any) =>  throw new Exception("Inserting into ? projection not supported."))
+    def ? = (Rep.Some(`type`), Rep.Some(id), Rep.Some(seq), Rep.Some(eventTime)).shaped.<>({r=>import r._; _1.map(_=> ChangeHistoryRow.tupled((_1.get, _2.get, _3.get, _4.get)))}, (_:Any) =>  throw new Exception("Inserting into ? projection not supported."))
 
     /** Database column type SqlType(text)
      *  NOTE: The name was escaped because it collided with a Scala keyword. */
@@ -68,39 +68,14 @@ trait Tables {
     val id: Rep[String] = column[String]("id")
     /** Database column seq SqlType(bigserial), AutoInc */
     val seq: Rep[Long] = column[Long]("seq", O.AutoInc)
+    /** Database column event_time SqlType(timestamptz) */
+    val eventTime: Rep[org.joda.time.DateTime] = column[org.joda.time.DateTime]("event_time")
 
     /** Primary key of ChangeHistory (database name change_history_pkey) */
     val pk = primaryKey("change_history_pkey", (`type`, id))
-
-    /** Index over (seq,`type`) (database name change_history_lookup) */
-    val index1 = index("change_history_lookup", (seq, `type`))
   }
   /** Collection-like TableQuery object for table ChangeHistory */
   lazy val ChangeHistory = new TableQuery(tag => new ChangeHistory(tag))
-
-
-  /** GetResult implicit for fetching ChangeHistoryToCompactRow objects using plain SQL queries */
-  implicit def GetResultChangeHistoryToCompactRow(implicit e0: GR[Long], e1: GR[String]): GR[ChangeHistoryToCompactRow] = GR{
-    prs => import prs._
-    ChangeHistoryToCompactRow.tupled((<<[Long], <<[String], <<[String]))
-  }
-  /** Table description of table change_history_to_compact. Objects of this class serve as prototypes for rows in queries.
-   *  NOTE: The following names collided with Scala keywords and were escaped: type */
-  class ChangeHistoryToCompact(_tableTag: Tag) extends Table[ChangeHistoryToCompactRow](_tableTag, "change_history_to_compact") {
-    def * = (key, `type`, id) <> (ChangeHistoryToCompactRow.tupled, ChangeHistoryToCompactRow.unapply)
-    /** Maps whole row to an option. Useful for outer joins. */
-    def ? = (Rep.Some(key), Rep.Some(`type`), Rep.Some(id)).shaped.<>({r=>import r._; _1.map(_=> ChangeHistoryToCompactRow.tupled((_1.get, _2.get, _3.get)))}, (_:Any) =>  throw new Exception("Inserting into ? projection not supported."))
-
-    /** Database column key SqlType(bigserial), AutoInc, PrimaryKey */
-    val key: Rep[Long] = column[Long]("key", O.AutoInc, O.PrimaryKey)
-    /** Database column type SqlType(text)
-     *  NOTE: The name was escaped because it collided with a Scala keyword. */
-    val `type`: Rep[String] = column[String]("type")
-    /** Database column id SqlType(text) */
-    val id: Rep[String] = column[String]("id")
-  }
-  /** Collection-like TableQuery object for table ChangeHistoryToCompact */
-  lazy val ChangeHistoryToCompact = new TableQuery(tag => new ChangeHistoryToCompact(tag))
 
 
   /** GetResult implicit for fetching ChangeHistoryToExpandRow objects using plain SQL queries */
@@ -192,14 +167,9 @@ case class ChangefeedRow(id: String, parentId: Option[String] = None, typeFilter
 /** Entity class storing rows of table ChangeHistory
  *  @param `type` Database column type SqlType(text)
  *  @param id Database column id SqlType(text)
- *  @param seq Database column seq SqlType(bigserial), AutoInc */
-case class ChangeHistoryRow(`type`: String, id: String, seq: Long)
-
-/** Entity class storing rows of table ChangeHistoryToCompact
- *  @param key Database column key SqlType(bigserial), AutoInc, PrimaryKey
- *  @param `type` Database column type SqlType(text)
- *  @param id Database column id SqlType(text) */
-case class ChangeHistoryToCompactRow(key: Long, `type`: String, id: String)
+ *  @param seq Database column seq SqlType(bigserial), AutoInc
+ *  @param eventTime Database column event_time SqlType(timestamptz) */
+case class ChangeHistoryRow(`type`: String, id: String, seq: Long, eventTime: org.joda.time.DateTime)
 
 /** Entity class storing rows of table ChangeHistoryToExpand
  *  @param key Database column key SqlType(bigserial), AutoInc, PrimaryKey

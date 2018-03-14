@@ -25,7 +25,7 @@ import play.api.mvc._
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-case class ChangefeedAttributes(maxAck: Long, parentMaxAck: Long, typeFilter: Option[List[String]], created: DateTime, lastAck: DateTime)
+case class ChangefeedAttributes(maxAck: Long, parentMaxAck: Long, maxEventTime: Option[DateTime], typeFilter: Option[List[String]], created: DateTime, lastAck: DateTime)
 object ChangefeedAttributes {
   implicit val jodaWrites : Writes[DateTime] = Writes[DateTime](ldt => {
     JsString(ldt.withZone(DateTimeZone.UTC).toString())
@@ -89,7 +89,7 @@ class DIChangeSourceBuilder @Inject() (cr: ChangefeedRepository, history: Change
     val source = Source.actorPublisher[ChangefeedEvent](publisher)
     val withWindow = if (timeout.length > 0) {
       source.via(Ops.dedupeWindow[ChangefeedEvent, (String, String)](delay, maxUnackedCount, DelayOverflowStrategy.backpressure, {
-        case ChangefeedEvent("event", Some(ChangeHistoryRow(itemType, id, _)), _) => itemType -> id
+        case ChangefeedEvent("event", Some(ChangeHistoryRow(itemType, id, _, _)), _) => itemType -> id
       }, _.eventType == "error"))
     } else {
       source
@@ -109,14 +109,15 @@ class ChangefeedController @Inject()(cr: ChangefeedRepository, da: DynamicAction
   def constrain(min: Int, value: Int) = Math.max(min, value)
   def constrain(min: Int, value: Int, max: Int) = Math.min(Math.max(min, value), max)
 
-  def changefeedToResource(t: (ChangefeedRow, Long)) : ChangefeedResource = new ChangefeedResource(
+  def changefeedToResource(t: (ChangefeedRow, Long, Option[DateTime])) : ChangefeedResource = new ChangefeedResource(
     t._1.id,
     ChangefeedAttributes(
-      t._1.maxAck,
-      t._2,
-      t._1.typeFilter,
-      t._1.created,
-      t._1.lastAck
+      maxAck = t._1.maxAck,
+      parentMaxAck = t._2,
+      maxEventTime = t._3,
+      typeFilter = t._1.typeFilter,
+      created = t._1.created,
+      lastAck = t._1.lastAck
     ),
     Some(ChangefeedRelationships(
       t._1.parentId.map(parentId => RelationshipObject(Undefined, new ChangefeedResourceId(parentId), Undefined))
@@ -189,7 +190,7 @@ class ChangefeedController @Inject()(cr: ChangefeedRepository, da: DynamicAction
   def ack(id: String, ack: Long) = WriteAuthAction.async {
     cr.get(id).flatMap {
       case None => Future.successful(NotFound)
-      case Some((changefeed, parentAck)) =>
+      case Some((_, parentAck, _)) =>
         if (ack > parentAck) {
           Future.successful(BadRequest(Json.toJson(ClientErrorResponse(BAD_REQUEST, s"Cannot ack $ack on changefeed '$id'.  Max ack of its parent is $parentAck"))))
         } else {

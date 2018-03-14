@@ -160,7 +160,7 @@ class PostgresResourceRepository @Inject()(databaseModule: DatabaseModule)(impli
       INNER JOIN resource_references rr ON rr.from_id = resource.id
       WHERE
         NOT resource.deleted
-        AND resource.id->>'type' = $incomingType
+        AND rr.from_id->>'type' = $incomingType
         AND rr.to_id = ${Json.toJson(Json.obj("type" -> resourceType, "id" -> resourceId))}
     """.as[JsValue]
 

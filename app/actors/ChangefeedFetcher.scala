@@ -155,7 +155,7 @@ class ChangefeedFetcher(changefeed: ChangefeedRow, subMgr: ActorRef, history: Ch
       // of time after the initial retrieval where events could slip in before we'd get notified of them
       // Doing it in this order may result in listening to unnecessary events, but at least there's no missing time coverage
       feeds.get(changefeed.id).map {
-        case Some((row, maxParentAck)) => InitialAcksConfirmed(row.maxAck, maxParentAck)
+        case Some((row, maxParentAck, _)) => InitialAcksConfirmed(row.maxAck, maxParentAck)
         case None => SubscriptionError(Some(changefeed.id), "Changefeed was deleted during initialization phase")
       }.recover {
         case err => SubscriptionError(Some(changefeed.id), s"Error while initializing: $err")

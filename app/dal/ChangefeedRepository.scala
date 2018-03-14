@@ -2,17 +2,21 @@ package dal
 
 import javax.inject.{Inject, Singleton}
 
+import com.github.tminglei.slickpg.utils.PlainSQLUtils
 import com.google.inject.ImplementedBy
 import core.db.{DatabaseModule, PgDriver}
 import core.util.{FutureUtil, Instrumented}
-import slick.dbio.Effect.Write
+import org.joda.time.DateTime
+import slick.dbio.Effect.{Read, Write}
+import slick.jdbc.GetResult.GetLong
+import slick.jdbc.{GetResult, GetTupleResult}
 
 import scala.concurrent.{ExecutionContext, Future}
 
 @ImplementedBy(classOf[PostgresChangefeedRepository])
 trait ChangefeedRepository {
-  def list(page: Int, size: Int): Future[Seq[(ChangefeedRow, Long)]]
-  def get(id: String) : Future[Option[(ChangefeedRow, Long)]]
+  def list(page: Int, size: Int): Future[Seq[(ChangefeedRow, Long, Option[DateTime])]]
+  def get(id: String) : Future[Option[(ChangefeedRow, Long, Option[DateTime])]]
   def simpleGet(id: String): Future[Option[ChangefeedRow]]
   def create(id: String, typeFilter: Option[List[String]], parentId: Option[String]): Future[Int]
   def delete(id: String) : Future[Int]
@@ -22,30 +26,39 @@ trait ChangefeedRepository {
 @Singleton
 class PostgresChangefeedRepository @Inject()(databaseModule: DatabaseModule)(implicit ec: ExecutionContext) extends ChangefeedRepository with Instrumented {
   import PgDriver.api._
+  import Tables._
 
   val listTimer = timing("list")
-
-  def list(page: Int, size: Int): Future[Seq[(ChangefeedRow, Long)]] = listTimer(databaseModule.read.run {
-    Tables.Changefeed
-      .sortBy(_.id)
-      .drop(page * size)
-      .take(size)
-      .joinLeft(Tables.Changefeed)
-      .on(_.parentId === _.id)
-      .map(r => (r._1, r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)))
-      .result
-  }).andThen(FutureUtil.logFailure("ChangefeedRepo.list"))
+  def list(page: Int, size: Int): Future[Seq[(ChangefeedRow, Long, Option[DateTime])]] = listTimer {
+    val action: DBIOAction[Seq[(ChangefeedRow, Long, Option[DateTime])], NoStream, Read] = sql"""
+      SELECT
+        c.*,
+        COALESCE(parent.max_ack, (SELECT MAX(seq) FROM change_history), 0),
+        (SELECT h.event_time FROM change_history h WHERE h.type = ANY(c.type_filter) ORDER BY h.seq DESC LIMIT 1)
+      FROM
+        changefeed AS c
+        LEFT JOIN changefeed AS parent ON parent.id = c.parent_id
+      ORDER BY c.id
+      OFFSET $page * $size
+      LIMIT $size
+    """.as[(ChangefeedRow, Long, Option[DateTime])]
+    databaseModule.read.run(action)
+  }.andThen(FutureUtil.logFailure("ChangefeedRepo.list"))
 
   val getTimer = timing("get")
-  def get(id: String): Future[Option[(ChangefeedRow, Long)]] = getTimer(databaseModule.read.run {
-    Tables.Changefeed
-      .filter(_.id === id)
-      .joinLeft(Tables.Changefeed)
-      .on(_.parentId === _.id)
-      .map(r => (r._1, r._2.map(_.maxAck).ifNull(Tables.ChangeHistory.map(_.seq).max).ifNull(0L)))
-      .result
-      .headOption
-  }).andThen(FutureUtil.logFailure("ChangefeedRepo.get"))
+  def get(id: String): Future[Option[(ChangefeedRow, Long, Option[DateTime])]] = getTimer {
+    val action: DBIOAction[Option[(ChangefeedRow, Long, Option[DateTime])], NoStream, Read] = sql"""
+      SELECT
+        c.*,
+        COALESCE(parent.max_ack, (SELECT MAX(seq) FROM change_history), 0),
+        (SELECT h.event_time FROM change_history h WHERE h.type = ANY(c.type_filter) ORDER BY h.seq DESC LIMIT 1)
+      FROM
+        changefeed AS c
+        LEFT JOIN changefeed AS parent ON parent.id = c.parent_id
+        WHERE c.id = $id;
+    """.as[(ChangefeedRow, Long, Option[DateTime])].headOption
+    databaseModule.read.run(action)
+  }.andThen(FutureUtil.logFailure("ChangefeedRepo.get"))
 
   val simpleGetTimer = timing("simpleGet")
   def simpleGet(id: String): Future[Option[ChangefeedRow]] = simpleGetTimer(databaseModule.read.run{
