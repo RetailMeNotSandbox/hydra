@@ -1,0 +1,49 @@
+digraph G {
+
+  subgraph clusterRequests {
+    node [style = filled];
+    rank = source;
+    "Resource request";
+    "Stream request";
+    Ack;
+  }
+
+  subgraph clusterApplication {
+    label = "APP";
+    color = purple;
+    "Resource controller" [shape = Mdiamond];
+    "Changefeed controller" [shape = Mdiamond];
+    ChangefeedSource [shape = diamond, style = filled];
+    ChangefeedFetcher [shape = diamond, style = filled];
+    AckSubscriptionManager [shape = Mdiamond];
+    ScratchExpander [shape = Mdiamond];
+    { rank = same; ChangefeedSource; ChangefeedFetcher; }
+  }
+  subgraph clusterDatabase {
+    label = "HYDRADB";
+    color=blue;
+    rank=sink;
+    node [shape = box];
+    resource;
+    change_history_to_expand;
+    change_history;
+    changefeed;
+  }
+  "Resource request" -> "Resource controller" [dir = both];
+  "Stream request" -> "Changefeed controller";
+  Ack -> "Changefeed controller";
+
+  "Changefeed controller" -> ChangefeedSource [label = "creates"];
+  "Changefeed controller" -> changefeed [label = "ack"];
+  ChangefeedSource -> "Stream request" [label = "HTTP chunked response"];
+  ChangefeedSource -> ChangefeedFetcher [dir = both];
+
+  "Resource controller" -> resource [dir = both];
+  resource -> change_history_to_expand  [label = "propagate_resource_edit()"];
+  ScratchExpander -> change_history_to_expand [label = "claim one ref", dir=both, arrowhead=none];
+  ScratchExpander -> change_history [label = "write ref and all related refs"];
+  AckSubscriptionManager -> change_history [label = "SELECT MAX(seq);"];
+  AckSubscriptionManager -> changefeed [label = "LISTEN 'changefeed_<name>';", dir=both, arrowhead=none, weight=10];
+  ChangefeedFetcher -> change_history [label = "SELECT, LIMIT bufsize;", weight=10, dir=both, arrowhead=none];
+  AckSubscriptionManager -> ChangefeedFetcher [dir = both];
+}
