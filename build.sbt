@@ -4,7 +4,7 @@ name := """Hydra"""
 
 organization := "com.rmn.api"
 
-scalaVersion := "2.11.6"
+scalaVersion := "2.11.12"
 
 resolvers ++= Seq("snapshots", "releases").map(Resolver.sonatypeRepo)
 
@@ -52,6 +52,8 @@ buildInfoUsePackageAsPath := true
 buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion)
 
 buildInfoOptions ++= Seq(BuildInfoOption.ToMap, BuildInfoOption.ToJson, BuildInfoOption.BuildTime)
+
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
 
 // Release
 import ReleaseTransformations._
