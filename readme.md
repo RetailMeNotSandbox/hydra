@@ -56,11 +56,11 @@ been registered with Hydra.
         "type": "changefeed",
         "id": "secondary",
         "attributes": {
-          "typeFilter": "mcguffin"
+          "typeFilter": ["mcguffin"]
         },
         "relationships": {
           "parent": {
-            "data": {"type": "changefeed", "id": "primary"}
+            "data": {"type": "changefeed", "id": "parent"}
           }
         }
       }
@@ -69,7 +69,7 @@ been registered with Hydra.
 ^ Registers a new changefeed with Hydra.  The `typeFilter` attribute and the `parent` relationship are optional.  If
 `typeFilter` is set, the created changefeed will only emit events for resources of the same type (case-sensitive).  If
 the `parent` relationship is set, the created changefeed will only emit events once the parent changefeed has ack'd to or
-beyond their seq number.
+beyond their seq number. Simply leave off the `relationships` attribute to use the default "global" parent.
 
     GET /changefeed/{id}
 
