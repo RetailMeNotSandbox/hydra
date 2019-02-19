@@ -42,7 +42,7 @@ RUN sbt clean test && \
 #########################################
 # Runtime image
 #########################################
-FROM adoptopenjdk/openjdk11:alpine-slim
+FROM %%RUNTIME_IMAGE%%
 LABEL authors=RetailMeNot
 
 RUN apk update && \
