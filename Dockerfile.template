@@ -42,12 +42,8 @@ RUN sbt clean test && \
 #########################################
 # Runtime image
 #########################################
-FROM %%RUNTIME_IMAGE%%
+FROM %RUNTIME_IMAGE%
 LABEL authors=RetailMeNot
-
-RUN apk update && \
-    apk upgrade && \
-    apk add bash
 
 COPY --from=builder /opt/hydra/ /opt/hydra
 
